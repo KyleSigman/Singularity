@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Сингулярность · Дуэльный Кодекс | 8 стихий</title>
+
+    <!-- Firebase SDK (вставь свой apiKey и projectId) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+    <style>
+        * { box-sizing: border-box; user-select: none; margin: 0; padding: 0; }
+        :root {
+            --bg-deep: #020810; --cyan: #4efff0; --gold: #ffd966; --magenta: #ff6bcb;
+            --cell-size: 72px; --glow-cyan: 0 0 18px rgba(0,255,240,0.5); --glow-magenta: 0 0 18px rgba(255,107,203,0.5);
+        }
+        body {
+            background: radial-gradient(ellipse at 40% 30%, #041020, #000);
+            min-height: 100vh; display: flex; justify-content: center; align-items: center;
+            font-family: 'Segoe UI', 'Orbitron', monospace; padding: 10px; flex-direction: column; gap: 10px; color: #e0f0ff;
+        }
+        /* ---------- ЛОББИ ---------- */
+        .lobby {
+            background: rgba(4,20,40,0.85); backdrop-filter: blur(12px); border: 2px solid var(--cyan);
+            border-radius: 40px; padding: 30px 24px; text-align: center; box-shadow: var(--glow-cyan);
+            display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 420px;
+        }
+        .lobby h2 { font-family: 'Orbitron', monospace; letter-spacing: 2px; color: var(--cyan); text-shadow: 0 0 8px cyan; }
+        .lobby input {
+            background: #000c18; border: 1px solid #3fa7b0; color: #fff; padding: 12px 20px;
+            border-radius: 60px; font-size: 1rem; text-align: center; outline: none; font-family: monospace;
+        }
+        .lobby input:focus { border-color: var(--cyan); box-shadow: 0 0 12px cyan; }
+        .btn {
+            background: #0a1e2e; border: 1px solid var(--cyan); color: #fff; padding: 12px 28px;
+            border-radius: 60px; cursor: pointer; font-weight: bold; font-family: monospace; transition: 0.15s;
+            font-size: 0.95rem; letter-spacing: 1px;
+        }
+        .btn:hover { background: #14424e; box-shadow: 0 0 18px cyan; }
+        .btn.gold { border-color: var(--gold); color: var(--gold); }
+        .btn.danger { border-color: #ff4444; color: #ff6b6b; }
+        .hidden { display: none !important; }
+
+        /* ---------- ИГРОВОЕ ПОЛЕ ---------- */
+        .game-core {
+            background: rgba(2,12,26,0.8); backdrop-filter: blur(14px); border-radius: 48px;
+            padding: 16px 14px 20px; border: 2px solid #4efff0aa; box-shadow: 0 0 35px rgba(0,210,255,0.25);
+            width: 100%; max-width: 520px;
+        }
+        .hypergrid {
+            display: grid; grid-template-columns: repeat(4, 1fr); aspect-ratio: 1 / 1; gap: 10px;
+            background: #020d1acc; padding: 14px; border-radius: 36px; border: 1px solid cyan;
+        }
+        .quant-cell {
+            background: #0a142ec0; border-radius: 20px; display: flex; align-items: center; justify-content: center;
+            font-size: 2.2rem; cursor: pointer; transition: 0.08s linear; border: 1px solid #3fa7b0;
+            box-shadow: 0 3px 0 #001a2a; position: relative; backdrop-filter: blur(3px); min-height: 60px;
+        }
+        .quant-cell.empty { background: #02101daa; border: 1px dashed #4ad4ff; }
+        .quant-cell.owner-1 {
+            background: radial-gradient(circle at 30% 30%, #1f4d75, #021c36);
+            border: 2px solid #5efffa; box-shadow: var(--glow-cyan);
+        }
+        .quant-cell.owner-2 {
+            background: radial-gradient(circle at 70% 70%, #73204a, #2f031e);
+            border: 2px solid #ff9ec9; box-shadow: var(--glow-magenta);
+        }
+        .quant-cell.pending { animation: pulse-hidden 1.2s infinite; border-style: dotted; }
+        @keyframes pulse-hidden { 0%,100% { box-shadow: 0 0 6px gold; } 50% { box-shadow: 0 0 18px gold; } }
+        .quant-cell.duel-target { animation: duel-flash 0.5s infinite; border: 3px solid red !important; }
+        @keyframes duel-flash { 0%,100% { box-shadow: 0 0 10px red; } 50% { box-shadow: 0 0 28px red; } }
+        .element-emojix { font-size: 2.2rem; filter: drop-shadow(0 0 4px currentColor); }
+        .element-hidden-icon { font-size: 2.2rem; opacity: 0.7; filter: blur(1px); }
+        .shield-badge, .charge-badge {
+            position: absolute; bottom: 3px; right: 5px; background: #ffdd99cc;
+            font-size: 0.6rem; padding: 2px 7px; border-radius: 20px; font-weight: bold; color: #1a1a0a;
+        }
+        .element-bar { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 16px 0 10px; }
+        .ele-btn {
+            background: #0a1a2a; border: none; font-size: 0.78rem; font-weight: bold; padding: 7px 10px;
+            border-radius: 40px; color: #eef5ff; cursor: pointer; font-family: monospace;
+            box-shadow: 0 2px 0 #010e18; display: flex; gap: 4px; align-items: center; transition: 0.1s;
+        }
+        .ele-btn.active { background: #2a6078; border: 2px solid gold; box-shadow: 0 0 14px cyan; }
+        .info-pod {
+            display: flex; justify-content: space-between; align-items: center; background: #04121fdd;
+            border-radius: 40px; padding: 6px 18px; margin: 8px 0; flex-wrap: wrap; font-size: 0.8rem; gap: 6px;
+        }
+        .turn-led {
+            background: #000000aa; padding: 5px 16px; border-radius: 40px; font-weight: bold; font-size: 0.9rem; color: #0ff;
+        }
+        .turn-led.my-turn { animation: glow-turn 1s infinite; }
+        @keyframes glow-turn { 0%,100% { text-shadow: 0 0 4px cyan; } 50% { text-shadow: 0 0 16px cyan; } }
+        .score-area { display: flex; gap: 20px; }
+        .log-console {
+            background: #010a10e0; border-radius: 30px; padding: 8px; text-align: center;
+            font-size: 0.7rem; color: #bcfffc; margin-top: 10px;
+        }
+
+        /* ---------- ДУЭЛЬНАЯ МОДАЛКА ---------- */
+        .duel-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex;
+            align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(6px);
+        }
+        .duel-arena {
+            background: linear-gradient(180deg, #0a1628 0%, #020810 100%); border: 3px solid gold;
+            border-radius: 36px; padding: 28px 20px 20px; text-align: center;
+            box-shadow: 0 0 50px rgba(255,200,0,0.4); width: 100%; max-width: 440px;
+            animation: arenaEnter 0.5s ease-out;
+        }
+        @keyframes arenaEnter { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .duel-title { font-family: 'Orbitron', monospace; font-size: 1.4rem; color: gold; text-shadow: 0 0 12px gold; margin-bottom: 20px; letter-spacing: 2px; }
+        .duel-fighters { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 20px; }
+        .fighter { text-align: center; flex: 1; }
+        .fighter-icon { font-size: 4.5rem; transition: 0.3s; display: block; }
+        .fighter-icon.hidden-icon { filter: blur(4px); opacity: 0.5; }
+        .fighter-icon.defeated { transform: scale(0.4); opacity: 0.2; filter: grayscale(1); }
+        .fighter-icon.victory { transform: scale(1.2); filter: drop-shadow(0 0 20px gold); animation: victoryPulse 0.6s infinite alternate; }
+        @keyframes victoryPulse { from { filter: drop-shadow(0 0 10px gold); } to { filter: drop-shadow(0 0 30px gold); } }
+        .fighter-label { font-size: 0.8rem; color: #ccc; margin-top: 4px; }
+        .vs-zone { font-size: 3rem; animation: vsBounce 0.4s infinite alternate; }
+        @keyframes vsBounce { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+        .duel-log {
+            background: #00050d; border-radius: 20px; padding: 12px; font-size: 0.85rem;
+            color: #ffd966; margin-bottom: 16px; min-height: 40px; border: 1px solid #333;
+        }
+        .duel-picker { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 16px; }
+        .duel-picker .ele-btn { font-size: 1.1rem; padding: 10px 14px; }
+        .duel-picker .ele-btn.chosen { border: 3px solid gold; box-shadow: 0 0 20px gold; background: #3a6a80; }
+        .btn-confirm {
+            background: gold; color: #000; font-weight: bold; padding: 12px 40px; border-radius: 60px;
+            cursor: pointer; border: none; font-size: 1rem; letter-spacing: 2px; transition: 0.2s;
+        }
+        .btn-confirm:hover { box-shadow: 0 0 24px gold; }
+        .btn-confirm:disabled { opacity: 0.3; cursor: not-allowed; }
+        .status-row { font-size: 0.7rem; color: #aaa; margin-top: 8px; }
+    </style>
+
+</head>
+
+<body>
+    <!-- ЛОББИ -->
+    <div class="lobby" id="lobby">
+        <h2>🌀 СИНГУЛЯРНОСТЬ</h2>
+        <p style="font-size:0.8rem;color:#aaa;">Дуэльный Кодекс 8 стихий</p>
+        <input type="text" id="gameIdInput" placeholder="Код игры (gameId)" maxlength="20">
+        <input type="text" id="playerNameInput" placeholder="Твой ник" maxlength="16">
+        <button class="btn gold" id="createGameBtn">✨ СОЗДАТЬ ИГРУ</button>
+        <button class="btn" id="joinGameBtn">🔗 ПРИСОЕДИНИТЬСЯ</button>
+        <p id="lobbyStatus" style="font-size:0.7rem;color:cyan;"></p>
+    </div>
+
+    <!-- ИГРОВОЕ ПОЛЕ -->
+    <div class="game-core hidden" id="gameCore">
+        <div class="hypergrid" id="hypergrid"></div>
+        <div class="element-bar" id="elementBar">
+            <button class="ele-btn" data-element="lightning">⚡ Молния</button>
+            <button class="ele-btn" data-element="fire">🔥 Огонь</button>
+            <button class="ele-btn" data-element="matter">🧬 Материя</button>
+            <!-- <button class="ele-btn" data-element="time">⌛ Время</button> -->
+            <button class="ele-btn" data-element="crystal">💎 Кристалл</button>
+            <button class="ele-btn" data-element="photon">☀️ Фотон</button>
+            <button class="ele-btn" data-element="dispersion">🌫️ Дисперсия</button>
+            <button class="ele-btn" data-element="glitch">◊ Глитч</button>
+        </div>
+        <div class="info-pod">
+            <div class="turn-led" id="turnLed">🌀 ХОД: —</div>
+            <div class="score-area">
+                <div>⭐ <span id="player1Name">Игрок 1</span>: <span id="score1">0</span></div>
+                <div>⭐ <span id="player2Name">Игрок 2</span>: <span id="score2">0</span></div>
+            </div>
+        </div>
+        <div class="log-console" id="gameLog">⚡ Ожидание...</div>
+        <button class="btn danger" id="leaveGameBtn" style="width:100%;margin-top:6px;">🚪 ПОКИНУТЬ ИГРУ</button>
+    </div>
+
+    <!-- ДУЭЛЬ -->
+    <div class="duel-overlay hidden" id="duelOverlay">
+        <div class="duel-arena" id="duelArena">
+            <div class="duel-title">⚔️ СТОЛКНОВЕНИЕ СТИХИЙ</div>
+            <div class="duel-fighters">
+                <div class="fighter" id="fighterAttacker">
+                    <span class="fighter-icon hidden-icon" id="attackerIcon">?</span>
+                    <div class="fighter-label">Атакующий</div>
+                </div>
+                <div class="vs-zone">💥</div>
+                <div class="fighter" id="fighterDefender">
+                    <span class="fighter-icon" id="defenderIcon">?</span>
+                    <div class="fighter-label">Защитник</div>
+                </div>
+            </div>
+            <div class="duel-log" id="duelLog">Выберите стихию для атаки...</div>
+            <div class="duel-picker hidden" id="duelPicker"></div>
+            <button class="btn-confirm" id="duelConfirmBtn">ГОТОВО</button>
+            <div class="status-row" id="duelStatus">Ожидание выбора...</div>
+        </div>
+    </div>
+
+    <!-- МОДАЛКА ПОБЕДЫ -->
+    <div class="duel-overlay hidden" id="victoryOverlay">
+        <div class="duel-arena" style="text-align:center;">
+            <div class="duel-title" id="victoryTitle">🏆</div>
+            <div class="fighter-icon" id="victoryIcon" style="font-size:5rem;"></div>
+            <div class="duel-log" id="victoryMessage" style="font-size:1rem;"></div>
+            <button class="btn-confirm" id="victoryCloseBtn" style="margin-top:16px;">🔄 НОВАЯ ИГРА</button>
+        </div>
+    </div>
+
+    <script>
+        // ==================== FIREBASE КОНФИГУРАЦИЯ ====================
+        // ⚠️ Замени на свой реальный проект Firebase
+        const firebaseConfig = {
+    apiKey: "AIzaSyD7XJDjsL698FfD7QUMGOaxm77........",
+    authDomain: "creator-75dac.firebaseapp.com",
+    databaseURL: "https://creator-75dac-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "creator-75dac",
+    storageBucket: "creator-75dac.firebasestorage.app",
+    messagingSenderId: "86422721022",
+    appId: "1:86422721022:web:ed2ae88a1bc1be46eff0af",
+    measurementId: "G-FN7KWCZX7X"
+};
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
+        let myUid = null;
+        let myPlayerNum = null;
+        let myGameId = null;
+        let gameRef = null;
+        let myName = '';
+
+        const WIN_SCORE = 9;
+        let board = Array(4).fill().map(() => Array(4).fill().map(() => ({ element: null, owner: null, shield: 0, charges: 0 })));
+        let currentPlayer = 1;
+        let scores = { 1: 0, 2: 0 };
+        let gameActive = false;
+        let selectedElement = "lightning";
+        let turnLock = false;
+        window.photonStep = { 1: 0, 2: 0 };
+        window.photonCleanse = { 1: 0, 2: 0 };
+        window.lastMove = null;
+
+        // ДУЭЛЬ
+        let duelActive = false;
+        let myDuelRole = null;
+        let duelCell = null;
+        let myDuelElement = null;
+        let duelConfirmed = false;
+        let duelResolveLock = false;
+
+        // ==================== DOM-ЭЛЕМЕНТЫ ====================
+        const lobby = document.getElementById('lobby');
+        const gameCore = document.getElementById('gameCore');
+        const gridDiv = document.getElementById('hypergrid');
+        const turnLed = document.getElementById('turnLed');
+        const score1Span = document.getElementById('score1');
+        const score2Span = document.getElementById('score2');
+        const gameLog = document.getElementById('gameLog');
+        const player1NameEl = document.getElementById('player1Name');
+        const player2NameEl = document.getElementById('player2Name');
+        const duelOverlay = document.getElementById('duelOverlay');
+        const duelLog = document.getElementById('duelLog');
+        const duelPicker = document.getElementById('duelPicker');
+        const duelConfirmBtn = document.getElementById('duelConfirmBtn');
+        const duelStatus = document.getElementById('duelStatus');
+        const attackerIcon = document.getElementById('attackerIcon');
+        const defenderIcon = document.getElementById('defenderIcon');
+
+        // ==================== УТИЛИТЫ ====================
+        function getElementSymbol(el) {
+            const map = {
+                lightning: '⚡', fire: '🔥', matter: '🧬', time: '⌛',
+                crystal: '💎', photon: '☀️', dispersion: '🌫️', glitch: '◊'
+            };
+            return map[el] || '?';
+        }
+
+        function uid() {
+            return 'uid_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+        }
+
+        let gameLogMessages = [];
+
+        function addGameLog(msg) {
+            gameLogMessages.push(msg);
+            if (gameLogMessages.length > 20) gameLogMessages.shift();
+            gameLog.innerText = gameLogMessages.join('\n');
+        }
+
+        function clearGameLog() {
+            gameLogMessages = [];
+            gameLog.innerText = '';
+        }
+
+        // ==================== ЛОББИ ====================
+        document.getElementById('createGameBtn').addEventListener('click', async () => {
+            const gameId = document.getElementById('gameIdInput').value.trim() || uid().substr(0, 8);
+            myName = document.getElementById('playerNameInput').value.trim() || 'Игрок 1';
+            myUid = uid();
+            myPlayerNum = 1;
+            myGameId = gameId;
+            gameRef = db.ref('games/' + gameId);
+
+            const initialBoard = Array(4).fill().map(() => Array(4).fill().map(() => ({
+                element: null, owner: null, shield: 0, charges: 0
+            })));
+
+            await gameRef.set({
+                board: initialBoard,
+                currentPlayer: 1,
+                scores: { 1: 0, 2: 0 },
+                gameActive: true,
+                players: {
+                    player1: { uid: myUid, name: myName },
+                    player2: { uid: null, name: 'Ожидание...' }
+                },
+                duel: null,
+                lastMove: null,
+                photonStep: { 1: 0, 2: 0 },
+                photonCleanse: { 1: 0, 2: 0 },
+                log: 'Игра создана. Ожидание Игрока 2...',
+                createdAt: firebase.database.ServerValue.TIMESTAMP
+            });
+
+            document.getElementById('lobbyStatus').innerText = `Игра "${gameId}" создана. Ждём второго игрока...`;
+            enterGame();
+        });
+
+        document.getElementById('joinGameBtn').addEventListener('click', async () => {
+            const gameId = document.getElementById('gameIdInput').value.trim();
+            if (!gameId) { alert('Введи код игры!'); return; }
+            myName = document.getElementById('playerNameInput').value.trim() || 'Игрок 2';
+            myUid = uid();
+            myGameId = gameId;
+            gameRef = db.ref('games/' + gameId);
+
+            const snap = await gameRef.once('value');
+            const data = snap.val();
+            if (!data) { alert('Игра не найдена!'); return; }
+            if (data.players.player2 && data.players.player2.uid) {
+                alert('Игра уже заполнена!');
+                return;
+            }
+
+            myPlayerNum = 2;
+            await gameRef.child('players/player2').set({ uid: myUid, name: myName });
+            await gameRef.child('log').set('Игрок 2 присоединился! Начинаем!');
+            document.getElementById('lobbyStatus').innerText = `Подключился к "${gameId}" как Игрок 2`;
+            enterGame();
+        });
+
+        function enterGame() {
+            lobby.classList.add('hidden');
+            gameCore.classList.remove('hidden');
+            player1NameEl.innerText = myPlayerNum === 1 ? myName : '...';
+            player2NameEl.innerText = myPlayerNum === 2 ? myName : '...';
+            listenGame();
+            listenDuel();
+            bindElements();
+        }
+
+        // ==================== СЛУШАТЕЛИ FIREBASE ====================
+
+        function listenGame() {
+    gameRef.on('value', (snap) => {
+        const data = snap.val();
+        if (!data) { location.reload(); return; }
+
+        board = data.board.map(row => Array.isArray(row) ? row.map(cell => ({
+            element: cell?.element || null,
+            owner: cell?.owner || null,
+            shield: cell?.shield || 0,
+            charges: cell?.charges || 0,
+            pending: cell?.pending || false
+        })) : Array(4).fill().map(() => ({ element: null, owner: null, shield: 0, charges: 0, pending: false })));
+        currentPlayer = data.currentPlayer || 1;
+        scores = data.scores || { 1: 0, 2: 0 };
+        gameActive = data.gameActive !== false;
+        window.photonStep = data.photonStep || { 1: 0, 2: 0 };
+        window.photonCleanse = data.photonCleanse || { 1: 0, 2: 0 };
+        window.lastMove = data.lastMove || null;
+        gameLog.innerText = data.log || '—';
+
+        if (data.players) {
+            player1NameEl.innerText = data.players.player1?.name || 'Игрок 1';
+            player2NameEl.innerText = data.players.player2?.name || 'Игрок 2';
+        }
+        score1Span.innerText = scores[1];
+        score2Span.innerText = scores[2];
+
+        const isMyTurn = (currentPlayer === myPlayerNum) && gameActive && !duelActive;
+        turnLed.innerText = isMyTurn ? `🌀 ТВОЙ ХОД!` : `🌀 ХОД: ИГРОК ${currentPlayer}`;
+        turnLed.classList.toggle('my-turn', isMyTurn);
+
+        renderBoard();
+
+        if (!gameActive && data.victory) {
+            showVictoryModal(data.victory);
+        }
+    });
+}
+
+
+        function listenDuel() {
+            gameRef.child('duel').on('value', (snap) => {
+                const duel = snap.val();
+                if (!duel || !duel.active) {
+                    hideDuel();
+                    return;
+                }
+
+                duelActive = true;
+                duelCell = duel.cell;
+                myDuelElement = null;
+                duelConfirmed = false;
+
+                if (duel.attacker === myUid) myDuelRole = 'attacker';
+                else if (duel.defender === myUid) myDuelRole = 'defender';
+                else myDuelRole = null;
+
+                showDuel(duel);
+            });
+        }
+
+        // ==================== ДУЭЛЬНЫЙ ДВИЖОК ====================
+
+        function showDuel(duel) {
+    duelOverlay.classList.remove('hidden');
+    duelConfirmBtn.disabled = false;
+    duelConfirmed = false;
+    duelResolveLock = false;
+
+    if (duel.winner) {
+        showDuelResult(duel);
+        return;
+    }
+
+    if (myDuelRole === 'defender') {
+        const cell = board[duel.cell[0]]?.[duel.cell[1]];
+        myDuelElement = cell?.element || 'glitch';
+        duelPicker.classList.add('hidden');
+        duelLog.innerText = 'Ваша фигурка защищается!';
+        duelStatus.innerText = 'Ожидание выбора атакующего...';
+        defenderIcon.innerText = getElementSymbol(myDuelElement);
+        defenderIcon.classList.remove('hidden-icon');
+        attackerIcon.innerText = '?';
+        attackerIcon.classList.add('hidden-icon');
+
+        gameRef.child('duel').once('value').then(snap => {
+            const d = snap.val();
+            if (d && !d.defenderElement) gameRef.child('duel/defenderElement').set(myDuelElement);
+            if (d && !d.defenderReady) gameRef.child('duel/defenderReady').set(true);
+        });
+    }
+
+    if (myDuelRole === 'attacker') {
+        duelPicker.classList.remove('hidden');
+        duelLog.innerText = 'Выберите стихию для атаки!';
+        duelStatus.innerText = 'Ваш выбор...';
+        attackerIcon.innerText = '?';
+        attackerIcon.classList.add('hidden-icon');
+        // Защитник всегда скрыт от атакующего до раскрытия
+        defenderIcon.innerText = '?';
+        defenderIcon.classList.add('hidden-icon');
+        buildDuelPicker();
+    }
+
+    if (!myDuelRole) {
+        duelPicker.classList.add('hidden');
+        duelLog.innerText = 'Идёт дуэль...';
+        duelStatus.innerText = '';
+        attackerIcon.innerText = duel.attackerElement ? getElementSymbol(duel.attackerElement) : '?';
+        defenderIcon.innerText = duel.defenderElement ? getElementSymbol(duel.defenderElement) : '?';
+        attackerIcon.classList.toggle('hidden-icon', !duel.attackerElement);
+        defenderIcon.classList.toggle('hidden-icon', !duel.defenderElement);
+    }
+
+    updateDuelUI(duel);
+}
+
+function updateDuelUI(duel) {
+    // Атакующий НЕ видит защитника до раскрытия
+    if (myDuelRole === 'attacker' && !duel.winner) {
+        attackerIcon.innerText = duel.attackerElement ? getElementSymbol(duel.attackerElement) : '?';
+        attackerIcon.classList.toggle('hidden-icon', !duel.attackerElement);
+        // Защитник всегда скрыт
+        defenderIcon.innerText = '?';
+        defenderIcon.classList.add('hidden-icon');
+    } else {
+        if (duel.attackerElement) {
+            attackerIcon.innerText = getElementSymbol(duel.attackerElement);
+            attackerIcon.classList.remove('hidden-icon');
+        }
+        if (duel.defenderElement) {
+            defenderIcon.innerText = getElementSymbol(duel.defenderElement);
+            defenderIcon.classList.remove('hidden-icon');
+        }
+    }
+
+    const aReady = duel.attackerReady;
+    const dReady = duel.defenderReady;
+    if (duel.winner) duelStatus.innerText = 'Нажми ГОТОВО для продолжения';
+    else if (aReady && dReady) duelStatus.innerText = 'Вычисление результата...';
+    else if (!aReady) duelStatus.innerText = 'Ждём атакующего...';
+    else duelStatus.innerText = 'Ждём защитника...';
+}
+
+
+        function buildDuelPicker() {
+            duelPicker.innerHTML = '';
+            ['lightning','fire','matter','crystal','photon','dispersion','glitch'].forEach(el => {
+                const btn = document.createElement('button');
+                btn.className = 'ele-btn';
+                btn.innerHTML = getElementSymbol(el);
+                btn.addEventListener('click', () => {
+                    myDuelElement = el;
+                    duelPicker.querySelectorAll('.ele-btn').forEach(b => b.classList.remove('chosen'));
+                    btn.classList.add('chosen');
+                    attackerIcon.innerText = getElementSymbol(el);
+                    attackerIcon.classList.remove('hidden-icon');
+                });
+                duelPicker.appendChild(btn);
+            });
+        }
+
+
+        duelConfirmBtn.addEventListener('click', async () => {
+    if (duelConfirmed) return;
+
+    // Проверяем, есть ли уже результат дуэли
+    const snap = await gameRef.child('duel').once('value');
+    const duel = snap.val();
+
+    // Если результат уже есть — просто закрываем модалку
+    if (duel && duel.winner) {
+        duelConfirmed = true;
+        duelConfirmBtn.disabled = true;
+        await finalizeDuel();
+        return;
+    }
+
+    // Если результата нет — требуется выбор стихии
+    if (myDuelRole === 'attacker' && !myDuelElement) {
+        alert('Выбери стихию!');
+        return;
+    }
+
+    duelConfirmed = true;
+    duelConfirmBtn.disabled = true;
+    duelConfirmBtn.innerText = '...';
+
+    if (myDuelRole === 'attacker') {
+        await gameRef.child('duel').update({
+            attackerElement: myDuelElement,
+            attackerReady: true
+        });
+    }
+    if (myDuelRole === 'defender') {
+        await gameRef.child('duel').update({ defenderReady: true });
+    }
+
+    setTimeout(async () => {
+        await checkAndResolveDuel();
+    }, 600);
+});
+
+
+        async function checkAndResolveDuel() {
+            if (duelResolveLock) return;
+            const snap = await gameRef.child('duel').once('value');
+            const duel = snap.val();
+            if (!duel || !duel.active) return;
+            if (duel.winner) { showDuelResult(duel); return; }
+            if (duel.attackerReady && duel.defenderReady && duel.attackerElement && duel.defenderElement) {
+                duelResolveLock = true;
+                await resolveDuel(duel);
+            }
+        }
+
+        async function resolveDuel(duel) {
+            const aEl = duel.attackerElement;
+            const dEl = duel.defenderElement;
+            const result = computeDuelResult(aEl, dEl);
+
+            await gameRef.child('duel').update({
+                winner: result.winner,
+                winnerElement: result.winnerElement,
+                loserElement: result.loserElement,
+                effectLog: result.effectLog,
+                resolvedAt: firebase.database.ServerValue.TIMESTAMP
+            });
+        }
+
+        function computeDuelResult(attackerEl, defenderEl) {
+    const matrix = {
+        lightning:{lightning:'draw',fire:'attacker',matter:'defender',crystal:'attacker',photon:'defender',dispersion:'attacker',glitch:'defender'},
+        fire:{lightning:'defender',fire:'draw',matter:'attacker',crystal:'attacker',photon:'attacker',dispersion:'defender',glitch:'defender'},
+        matter:{lightning:'attacker',fire:'defender',matter:'draw',crystal:'attacker',photon:'defender',dispersion:'attacker',glitch:'attacker'},
+        crystal:{lightning:'defender',fire:'defender',matter:'defender',crystal:'draw',photon:'defender',dispersion:'attacker',glitch:'defender'},
+        photon:{lightning:'attacker',fire:'defender',matter:'attacker',crystal:'attacker',photon:'draw',dispersion:'attacker',glitch:'attacker'},
+        dispersion:{lightning:'defender',fire:'attacker',matter:'defender',crystal:'defender',photon:'defender',dispersion:'draw',glitch:'defender'},
+        glitch:{lightning:'attacker',fire:'attacker',matter:'defender',crystal:'attacker',photon:'defender',dispersion:'attacker',glitch:'draw'}
+    };
+    const outcome = matrix[attackerEl]?.[defenderEl] || 'draw';
+    let winner, winnerElement, loserElement, effectLog;
+    if (outcome === 'attacker') {
+        winner = 'attacker'; winnerElement = attackerEl; loserElement = defenderEl;
+        effectLog = `${getElementSymbol(attackerEl)} побеждает ${getElementSymbol(defenderEl)}! Клетка захвачена!`;
+    } else if (outcome === 'defender') {
+        winner = 'defender'; winnerElement = defenderEl; loserElement = attackerEl;
+        effectLog = `${getElementSymbol(defenderEl)} отражает атаку ${getElementSymbol(attackerEl)}! Защита крепка!`;
+    } else {
+        winner = 'draw'; winnerElement = null; loserElement = null;
+        effectLog = `Ничья! Обе стихии аннигилируют!`;
+    }
+    return { winner, winnerElement, loserElement, effectLog };
+}
+
+        // function computeDuelResult(attackerEl, defenderEl) {
+        //     const matrix = {
+        //         lightning:{lightning:'draw',fire:'attacker',matter:'defender',time:'attacker',crystal:'attacker',photon:'defender',dispersion:'attacker',glitch:'defender'},
+        //         fire:{lightning:'defender',fire:'draw',matter:'attacker',time:'attacker',crystal:'attacker',photon:'attacker',dispersion:'defender',glitch:'defender'},
+        //         matter:{lightning:'attacker',fire:'defender',matter:'draw',time:'defender',crystal:'attacker',photon:'defender',dispersion:'attacker',glitch:'attacker'},
+        //         time:{lightning:'defender',fire:'defender',matter:'attacker',time:'draw',crystal:'defender',photon:'attacker',dispersion:'attacker',glitch:'defender'},
+        //         crystal:{lightning:'defender',fire:'defender',matter:'defender',time:'attacker',crystal:'draw',photon:'defender',dispersion:'attacker',glitch:'defender'},
+        //         photon:{lightning:'attacker',fire:'defender',matter:'attacker',time:'defender',crystal:'attacker',photon:'draw',dispersion:'attacker',glitch:'attacker'},
+        //         dispersion:{lightning:'defender',fire:'attacker',matter:'defender',time:'defender',crystal:'defender',photon:'defender',dispersion:'draw',glitch:'defender'},
+        //         glitch:{lightning:'attacker',fire:'attacker',matter:'defender',time:'attacker',crystal:'attacker',photon:'defender',dispersion:'attacker',glitch:'draw'}
+        //     };
+        //     const outcome = matrix[attackerEl]?.[defenderEl] || 'draw';
+        //     let winner, winnerElement, loserElement, effectLog;
+        //     if (outcome === 'attacker') {
+        //         winner = 'attacker'; winnerElement = attackerEl; loserElement = defenderEl;
+        //         effectLog = `${getElementSymbol(attackerEl)} побеждает ${getElementSymbol(defenderEl)}! Клетка захвачена!`;
+        //     } else if (outcome === 'defender') {
+        //         winner = 'defender'; winnerElement = defenderEl; loserElement = attackerEl;
+        //         effectLog = `${getElementSymbol(defenderEl)} отражает атаку ${getElementSymbol(attackerEl)}! Защита крепка!`;
+        //     } else {
+        //         winner = 'draw'; winnerElement = null; loserElement = null;
+        //         effectLog = `Ничья! Обе стихии аннигилируют!`;
+        //     }
+        //     return { winner, winnerElement, loserElement, effectLog };
+        // }
+
+        function showDuelResult(duel) {
+            duelPicker.classList.add('hidden');
+            duelLog.innerText = duel.effectLog || 'Дуэль завершена.';
+            duelStatus.innerText = 'Нажми ГОТОВО для продолжения';
+            duelConfirmBtn.disabled = false;
+            duelConfirmBtn.innerText = 'ГОТОВО';
+            duelConfirmed = false;
+
+            attackerIcon.innerText = getElementSymbol(duel.attackerElement || 'glitch');
+            defenderIcon.innerText = getElementSymbol(duel.defenderElement || 'glitch');
+            attackerIcon.classList.remove('hidden-icon','victory','defeated');
+            defenderIcon.classList.remove('hidden-icon','victory','defeated');
+
+            if (duel.winner === 'attacker') {
+                attackerIcon.classList.add('victory');
+                defenderIcon.classList.add('defeated');
+            } else if (duel.winner === 'defender') {
+                defenderIcon.classList.add('victory');
+                attackerIcon.classList.add('defeated');
+            } else {
+                attackerIcon.classList.add('defeated');
+                defenderIcon.classList.add('defeated');
+            }
+
+            setTimeout(async () => {
+                const snap = await gameRef.child('duel').once('value');
+                if (snap.val()?.winner) await finalizeDuel();
+            }, 10000);
+        }
+
+
+        async function finalizeDuel() {
+    const duelSnap = await gameRef.child('duel').once('value');
+    const duel = duelSnap.val();
+    if (!duel || !duel.active) { hideDuel(); return; }
+
+    const [row, col] = duel.cell;
+    const cell = board[row][col];
+
+    // Снимаем pending со всех фигурок защитника перед разрешением
+    const defenderOwner = cell.owner;
+    if (defenderOwner) {
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                if (board[i][j].owner === defenderOwner && board[i][j].pending) {
+                    board[i][j].pending = false;
+                }
+            }
+        }
+    }
+
+    if (duel.winner === 'attacker') {
+        cell.element = duel.attackerElement;
+        const playersSnap = await gameRef.child('players').once('value');
+        const players = playersSnap.val();
+        cell.owner = duel.attacker === players.player1?.uid ? 1 : 2;
+        cell.shield = 0;
+        cell.charges = 0;
+        cell.pending = false;
+    } else if (duel.winner === 'defender') {
+        cell.pending = false;
+    } else {
+        cell.element = null;
+        cell.owner = null;
+        cell.shield = 0;
+        cell.charges = 0;
+        cell.pending = false;
+    }
+
+    const nextPlayer = currentPlayer === 1 ? 2 : 1;
+    await gameRef.update({
+        board: board,
+        currentPlayer: nextPlayer,
+        duel: null,
+        log: duel.effectLog || 'Дуэль завершена.'
+    });
+    hideDuel();
+}
+
+
+        function hideDuel() {
+            duelOverlay.classList.add('hidden');
+            duelActive = false;
+            myDuelRole = null; duelCell = null; myDuelElement = null;
+            duelConfirmed = false; duelResolveLock = false;
+            attackerIcon.classList.remove('hidden-icon','victory','defeated');
+            defenderIcon.classList.remove('hidden-icon','victory','defeated');
+            attackerIcon.innerText = '?'; defenderIcon.innerText = '?';
+            duelConfirmBtn.disabled = false; duelConfirmBtn.innerText = 'ГОТОВО';
+        }
+
+        // ==================== ИГРОВОЕ ПОЛЕ ====================
+        async function makeMove(row, col) {
+
+            if (!gameActive || turnLock || duelActive || currentPlayer !== myPlayerNum) return;
+            if (countEmptyCells() === 0) return;
+
+            const cell = board[row][col];
+
+            if (cell.element !== null && cell.owner !== null && cell.owner !== myPlayerNum && cell.pending) {
+                turnLock = true;
+                await gameRef.child('duel').set({
+                    active: true,
+                    cell: [row, col],
+                    attacker: myUid,
+                    defender: null,
+                    attackerElement: null,
+                    defenderElement: cell.element,
+                    attackerReady: false,
+                    defenderReady: false,
+                    winner: null,
+                    effectLog: ''
+                });
+                const playersSnap = await gameRef.child('players').once('value');
+                const players = playersSnap.val();
+                const defenderUid = cell.owner === 1 ? players.player1.uid : players.player2.uid;
+                await gameRef.child('duel/defender').set(defenderUid);
+                turnLock = false;
+                return;
+            }
+
+            if (cell.element !== null && cell.owner !== null && cell.owner !== myPlayerNum && !cell.pending) {
+                gameLog.innerText = '❌ Клетка уже занята и открыта. Бой невозможен.';
+                return;
+            }
+
+            turnLock = true;
+            cell.element = selectedElement;
+            cell.owner = myPlayerNum;
+            cell.pending = true;
+            if (selectedElement !== 'crystal') cell.charges = 0;
+            if (selectedElement !== 'matter') cell.shield = 0;
+
+            for (let i = 0; i < 4; i++) {
+                for (let j = 0; j < 4; j++) {
+                    if (board[i][j].owner === myPlayerNum && board[i][j].pending && (i !== row || j !== col)) {
+                        board[i][j].pending = false;
+                    }
+                }
+            }
+
+            window.lastMove = { row, col, owner: myPlayerNum };
+            window._pendingVictory = null;
+            applyElementEffectsLocal(row, col, selectedElement, myPlayerNum);
+            calculatePointsLocal();
+            crystalAccumulateLocal();
+            photonRhythmLocal(myPlayerNum);
+            calculatePointsLocal();
+
+            const nextPlayer = myPlayerNum === 1 ? 2 : 1;
+            await gameRef.update({
+                board: board,
+                currentPlayer: nextPlayer,
+                scores: scores,
+                lastMove: window.lastMove,
+                photonStep: window.photonStep,
+                photonCleanse: window.photonCleanse,
+                log: gameLog.innerText,
+                gameActive: gameActive,
+                victory: window._pendingVictory || null
+            });
+            window._pendingVictory = null;
+            turnLock = false;
+            renderBoard();
+}
+
+        function renderBoard() {
+    gridDiv.innerHTML = '';
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            const cell = board[i]?.[j] || { element: null, owner: null, shield: 0, charges: 0, pending: false };
+            const div = document.createElement('div');
+            div.className = `quant-cell ${cell.owner===1?"owner-1":cell.owner===2?"owner-2":""} ${cell.element===null?"empty":""}`;
+
+            if (duelActive && duelCell && duelCell[0]===i && duelCell[1]===j) {
+                div.classList.add('duel-target');
+            }
+
+            // Скрытая фигурка: рубашка вверх для противника
+            const isHidden = cell.pending && cell.owner !== myPlayerNum;
+
+            if (cell.element && !isHidden) {
+                const emoji = document.createElement('div');
+                emoji.className = 'element-emojix';
+                emoji.innerText = getElementSymbol(cell.element);
+                div.appendChild(emoji);
+                if (cell.shield > 0) {
+                    const s = document.createElement('div'); s.className = 'shield-badge';
+                    s.innerText = `🛡️${cell.shield}`; div.appendChild(s);
+                }
+                if (cell.element === 'crystal' && cell.charges > 0) {
+                    const ch = document.createElement('div'); ch.className = 'charge-badge';
+                    ch.innerText = `⚡${cell.charges}`; div.appendChild(ch);
+                }
+            } else if (cell.element && isHidden) {
+                // Рубашка вверх
+                const hiddenIcon = document.createElement('div');
+                hiddenIcon.className = 'element-hidden-icon';
+                hiddenIcon.innerText = '?';
+                div.appendChild(hiddenIcon);
+                div.classList.add('pending');
+            }
+
+            const canClick = gameActive && currentPlayer === myPlayerNum && !duelActive;
+            div.style.cursor = canClick ? 'pointer' : 'not-allowed';
+            div.style.opacity = gameActive ? '1' : '0.6';
+            if (canClick) div.addEventListener('click', () => makeMove(i, j));
+
+            gridDiv.appendChild(div);
+        }
+    }
+}
+
+        function applyElementEffectsLocal(row, col, element, player) {
+    const cell = board[row][col];
+
+    if (element === 'matter') {
+        cell.shield += 2;
+        addGameLog(`🧬 Материя на [${row+1},${col+1}]: щит +2 (теперь ${cell.shield})`);
+    }
+    
+    if (element === 'crystal') {
+        cell.shield = 1;
+        cell.charges = 0;
+        addGameLog(`💎 Кристалл на [${row+1},${col+1}]: щит 1, заряды 0`);
+    }
+
+    if (element === 'lightning') {
+
+        let targets = [];
+        for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+            const nr = row+dr, nc = col+dc;
+            if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+                const t = board[nr][nc];
+                if (t.element && t.owner !== player && t.owner) {
+                    targets.push({nr, nc, cell: t});
+                }
+            }
+        }
+        
+        // Перехват всех Молний без щита
+        const lightningTargets = targets.filter(t => t.cell.element === 'lightning' && t.cell.shield === 0);
+        for (const target of lightningTargets) {
+            target.cell.owner = player;
+            addGameLog(`⚡ Молния перехватила Молнию на [${target.nr+1},${target.nc+1}]`);
+        }
+        
+        // Одна случайная из перехваченных Молний может стать Фотоном (50%)
+        if (lightningTargets.length > 0 && Math.random() < 0.5) {
+            const target = lightningTargets[Math.floor(Math.random() * lightningTargets.length)];
+            target.cell.element = 'photon';
+            target.cell.charges = 0;
+            addGameLog(`⚡ Молния превратила перехваченную Молнию на [${target.nr+1},${target.nc+1}] в ☀️ Фотон`);
+        }
+        
+        // Один удар по не-Молнии
+        const nonLightning = targets.filter(t => t.cell.element !== 'lightning');
+        if (nonLightning.length > 0) {
+            const target = nonLightning[Math.floor(Math.random() * nonLightning.length)];
+            const t = target.cell;
+            if (t.shield > 0) {
+                t.shield--;
+                addGameLog(`⚡ Молния ударила по [${target.nr+1},${target.nc+1}]: щит -1 (осталось ${t.shield})`);
+            } else {
+                if (Math.random() < 0.5) {
+                    addGameLog(`⚡ Молния уничтожила ${getElementSymbol(t.element)} на [${target.nr+1},${target.nc+1}]`);
+                    t.element = null;
+                    t.owner = null;
+                    t.shield = 0;
+                    t.charges = 0;
+                } else {
+                    const oldEl = getElementSymbol(t.element);
+                    t.element = 'photon';
+                    t.owner = player;
+                    t.shield = 0;
+                    t.charges = 0;
+                    addGameLog(`⚡ Молния превратила ${oldEl} на [${target.nr+1},${target.nc+1}] в ☀️ Фотон`);
+                }
+            }
+        }
+
+}
+
+//     if (element === 'lightning') {
+//     let targets = [];
+//     for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+//         const nr = row+dr, nc = col+dc;
+//         if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+//             const t = board[nr][nc];
+//             if (t.element && t.owner !== player && t.owner) {
+//                 targets.push({nr, nc, cell: t});
+//             }
+//         }
+//     }
+//     // Сначала обрабатываем перехват Молнии
+//     for (const target of targets) {
+//         const t = target.cell;
+//         if (t.element === 'lightning' && t.shield === 0) {
+//             t.owner = player;
+//             addGameLog(`⚡ Молния перехватила Молнию на [${target.nr+1},${target.nc+1}]`);
+//         }
+//     }
+//     // Затем один удар по не-Молнии
+//     const nonLightning = targets.filter(t => t.cell.element !== 'lightning' && t.cell.owner !== player);
+//     if (nonLightning.length > 0) {
+//         const target = nonLightning[Math.floor(Math.random() * nonLightning.length)];
+//         const t = target.cell;
+//         if (t.shield > 0) {
+//             t.shield--;
+//             addGameLog(`⚡ Молния ударила по [${target.nr+1},${target.nc+1}]: щит -1 (осталось ${t.shield})`);
+//         } else {
+//             if (Math.random() < 0.5) {
+//                 addGameLog(`⚡ Молния уничтожила ${getElementSymbol(t.element)} на [${target.nr+1},${target.nc+1}]`);
+//                 t.element = null;
+//                 t.owner = null;
+//                 t.shield = 0;
+//                 t.charges = 0;
+//             } else {
+//                 const oldEl = getElementSymbol(t.element);
+//                 t.element = 'photon';
+//                 t.owner = player;
+//                 t.shield = 0;
+//                 t.charges = 0;
+//                 addGameLog(`⚡ Молния превратила ${oldEl} на [${target.nr+1},${target.nc+1}] в ☀️ Фотон`);
+//             }
+//         }
+//     }
+// }
+ 
+    if (element === 'fire') {
+        for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+            const nr = row+dr, nc = col+dc;
+            if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+                const t = board[nr][nc];
+                if (t.element && t.owner !== player) {
+                    if (t.shield > 0) {
+                        t.shield--;
+                        addGameLog(`🔥 Огонь атаковал [${nr+1},${nc+1}]: щит -1 (осталось ${t.shield})`);
+                    } else {
+                        const oldEl = getElementSymbol(t.element);
+                        t.owner = player;
+                        t.shield = 0;
+                        if (Math.random() < 0.5) {
+                            t.element = 'matter';
+                        } else {
+                            t.element = 'fire';
+                        }
+                        addGameLog(`🔥 Огонь захватил ${oldEl} на [${nr+1},${nc+1}] → ${getElementSymbol(t.element)}`);
+                    }
+                }
+            }
+        }
+    }
+
+    if (element === 'glitch') {
+    // Поиск случайной занятой клетки
+    const candidates = [];
+    for (let i=0; i<4; i++) for (let j=0; j<4; j++) {
+        if ((i !== row || j !== col) && board[i][j].element) {
+            candidates.push([i,j]);
+        }
+    }
+    if (candidates.length > 0) {
+        const [r2, c2] = candidates[Math.floor(Math.random() * candidates.length)];
+        const temp = {...board[r2][c2]};
+        board[r2][c2] = {...board[row][col]};
+        board[row][col] = {...temp};
+        addGameLog(`◊ Глитч обменял клетки [${row+1},${col+1}] ↔ [${r2+1},${c2+1}]`);
+    } else {
+        addGameLog(`◊ Глитч на [${row+1},${col+1}]: нет других клеток для обмена`);
+    }
+}
+
+if (element === 'dispersion') {
+    // Самоуничтожение
+    addGameLog(`🌫️ Дисперсия на [${row+1},${col+1}] самоуничтожилась`);
+    // Удар по 8 соседям
+    for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+        const nr = row+dr, nc = col+dc;
+        if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+            const t = board[nr][nc];
+            if (t.element && t.owner) {
+                if (t.shield > 0) {
+                    t.shield--;
+                    addGameLog(`🌫️ Дисперсия сняла щит с [${nr+1},${nc+1}] (осталось ${t.shield})`);
+                } else if (Math.random() < 0.5) {
+                    const elements = ['lightning','fire','matter','crystal','photon','glitch'];
+                    const newEl = elements[Math.floor(Math.random() * elements.length)];
+                    const oldEl = getElementSymbol(t.element);
+                    t.element = newEl;
+                    addGameLog(`🌫️ Дисперсия мутировала ${oldEl} на [${nr+1},${nc+1}] → ${getElementSymbol(newEl)}`);
+                }
+            }
+        }
+    }
+    // Очистка своей клетки
+    cell.element = null;
+    cell.owner = null;
+    cell.shield = 0;
+    cell.charges = 0;
+    cell.pending = false;
+}
+
+}
+
+        // function applyElementEffectsLocal(row, col, element, player) {
+//     const cell = board[row][col];
+//     if (element === 'matter') {
+//         cell.shield += 2;
+//         addGameLog(`🧬 Материя на [${row+1},${col+1}]: щит +2 (теперь ${cell.shield})`);
+//     }
+//     if (element === 'crystal') {
+//         cell.shield = 1;
+//         cell.charges = 0;
+//         addGameLog(`💎 Кристалл на [${row+1},${col+1}]: щит 1, заряды 0`);
+//     }
+//     if (element === 'lightning') {
+//         for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+//             const nr = row+dr, nc = col+dc;
+//             if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+//                 const t = board[nr][nc];
+//                 if (t.element && t.owner !== player && t.owner) {
+//                     if (t.element === 'lightning' && t.shield === 0) {
+//                         t.owner = player;
+//                         addGameLog(`⚡ Молния перехватила Молнию на [${nr+1},${nc+1}]`);
+//                     } else if (t.element !== 'lightning') {
+//                         if (t.shield > 0) {
+//                             t.shield--;
+//                             addGameLog(`⚡ Молния ударила по [${nr+1},${nc+1}]: щит -1 (осталось ${t.shield})`);
+//                         } else {
+//                             addGameLog(`⚡ Молния уничтожила ${getElementSymbol(t.element)} на [${nr+1},${nc+1}]`);
+//                             t.element = null;
+//                             t.owner = null;
+//                             t.shield = 0;
+//                             t.charges = 0;
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     if (element === 'fire') {
+//         for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+//             const nr = row+dr, nc = col+dc;
+//             if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+//                 const t = board[nr][nc];
+//                 if (t.element && t.owner !== player) {
+//                     if (t.shield > 0) {
+//                         t.shield--;
+//                         addGameLog(`🔥 Огонь атаковал [${nr+1},${nc+1}]: щит -1 (осталось ${t.shield})`);
+//                     } else {
+//                         const oldEl = getElementSymbol(t.element);
+//                         t.owner = player;
+//                         t.shield = 0;
+//                         if (Math.random() < 0.5) {
+//                             t.element = 'matter';
+//                         } else {
+//                             t.element = 'fire';
+//                         }
+//                         addGameLog(`🔥 Огонь захватил ${oldEl} на [${nr+1},${nc+1}] → ${getElementSymbol(t.element)}`);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
+
+// function applyElementEffectsLocal(row, col, element, player) {
+//     const cell = board[row][col];
+//     if (element === 'matter') { cell.shield += 2; }
+//     if (element === 'crystal') { cell.shield = 1; cell.charges = 0; }
+//     if (element === 'lightning') {
+//         for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+//             const nr = row+dr, nc = col+dc;
+//             if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+//                 const t = board[nr][nc];
+//                 if (t.element && t.owner !== player && t.owner) {
+//                     if (t.element === 'lightning' && t.shield === 0) {
+//                         // Перехват Молнии без щита
+//                         t.owner = player;
+//                     } else if (t.element !== 'lightning') {
+//                         // Удар по не-Молнии
+//                         if (t.shield > 0) {
+//                             t.shield--;
+//                         } else {
+//                             t.element = null;
+//                             t.owner = null;
+//                             t.shield = 0;
+//                             t.charges = 0;
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//     if (element === 'fire') {
+//         for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+//             const nr = row+dr, nc = col+dc;
+//             if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+//                 const t = board[nr][nc];
+//                 if (t.element && t.owner !== player) {
+//                     if (t.shield > 0) {
+//                         t.shield--;
+//                     } else {
+//                         t.owner = player;
+//                         t.shield = 0;
+//                         if (Math.random() < 0.5) {
+//                             t.element = 'matter';
+//                         } else {
+//                             t.element = 'fire';
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
+        // function applyElementEffectsLocal(row, col, element, player) {
+        //     const cell = board[row][col];
+        //     if (element === 'matter') { cell.shield += 2; }
+        //     if (element === 'crystal') { cell.shield = 1; cell.charges = 0; }
+        //     if (element === 'lightning') {
+        //         for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+        //             const nr = row+dr, nc = col+dc;
+        //             if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+        //                 const t = board[nr][nc];
+        //                 if (t.element === 'lightning' && t.owner !== player && t.owner && t.shield===0) t.owner = player;
+        //             }
+        //         }
+        //     }
+        //     if (element === 'fire') {
+        //         for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+        //             const nr = row+dr, nc = col+dc;
+        //             if (nr>=0 && nr<4 && nc>=0 && nc<4) {
+        //                 const t = board[nr][nc];
+        //                 if (t.element && t.owner !== player) {
+        //                     if (t.shield > 0) t.shield--;
+        //                     else { t.element = 'fire'; t.owner = player; t.shield = 0; }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+
+        function calculatePointsLocal() {
+    const lines = [];
+    for (let r=0; r<4; r++) { const l=[]; for (let c=0; c<4; c++) l.push([r,c]); lines.push(l); }
+    for (let c=0; c<4; c++) { const l=[]; for (let r=0; r<4; r++) l.push([r,c]); lines.push(l); }
+    const d1=[], d2=[];
+    for (let i=0; i<4; i++) { d1.push([i,i]); d2.push([i,3-i]); }
+    lines.push(d1, d2);
+    for (const line of lines) {
+        const cells = line.map(([r,c]) => board[r][c]);
+        if (cells.every(c => c.element && c.element===cells[0].element && c.owner===cells[0].owner && c.owner)) {
+            scores[cells[0].owner] += 1;
+        }
+    }
+
+    let victory = null;
+
+    if (scores[1] >= WIN_SCORE) {
+        gameActive = false;
+        victory = { winner: 1, reason: 'очков', score1: scores[1], score2: scores[2] };
+        gameLog.innerText = '🏆 ИГРОК 1 ПОБЕДИЛ!';
+    } else if (scores[2] >= WIN_SCORE) {
+        gameActive = false;
+        victory = { winner: 2, reason: 'очков', score1: scores[1], score2: scores[2] };
+        gameLog.innerText = '🏆 ИГРОК 2 ПОБЕДИЛ!';
+    } else if (countEmptyCells() === 0) {
+        let p1 = 0, p2 = 0;
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                if (board[i][j].owner === 1) p1++;
+                else if (board[i][j].owner === 2) p2++;
+            }
+        }
+        gameActive = false;
+        if (p1 > p2) {
+            victory = { winner: 1, reason: 'территории', cells1: p1, cells2: p2 };
+            gameLog.innerText = `🏆 ПОБЕДА ПО ТЕРРИТОРИИ! Игрок 1 (${p1} клеток) vs ${p2}`;
+        } else if (p2 > p1) {
+            victory = { winner: 2, reason: 'территории', cells1: p1, cells2: p2 };
+            gameLog.innerText = `🏆 ПОБЕДА ПО ТЕРРИТОРИИ! Игрок 2 (${p2} клеток) vs ${p1}`;
+        } else {
+            victory = { winner: 0, reason: 'территории', cells1: p1, cells2: p2 };
+            gameLog.innerText = `🌀 НИЧЬЯ! Идеальный баланс клеток.`;
+        }
+    }
+
+    window._pendingVictory = victory;
+}
+
+        function crystalAccumulateLocal() {
+            for (let i=0; i<4; i++) for (let j=0; j<4; j++) {
+                const cell = board[i][j];
+                if (cell.element === 'crystal' && cell.owner !== null && cell.charges < 3) {
+                    let hasNeighbor = false;
+                    for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++) if (dr || dc) {
+                        const nr = i+dr, nc = j+dc;
+                        if (nr>=0 && nr<4 && nc>=0 && nc<4 && board[nr][nc].element) hasNeighbor = true;
+                    }
+                    if (hasNeighbor) cell.charges++;
+                }
+            }
+        }
+
+        function photonRhythmLocal(player) {
+            const cells = [];
+            for (let i=0; i<4; i++) for (let j=0; j<4; j++)
+                if (board[i][j].element === 'photon' && board[i][j].owner === player) cells.push([i,j]);
+            const count = cells.length;
+            if (count === 0) return;
+
+            // Дублирование каждые 2 хода
+            window.photonStep[player]++;
+            if (window.photonStep[player] >= 2) {
+                window.photonStep[player] = 0;
+                const empty = [];
+                for (let i=0; i<4; i++) for (let j=0; j<4; j++)
+                    if (board[i][j].element === null) empty.push([i,j]);
+                if (empty.length) {
+                    const [ex,ey] = empty[Math.floor(Math.random()*empty.length)];
+                    board[ex][ey] = { element:'photon', owner:player, shield:0, charges:0 };
+                }
+            }
+
+            // Очистка вражеской клетки при ≥3 фотонах (каждые 4 хода)
+            if (count >= 3) {
+                if (!window.photonCleanse[player]) window.photonCleanse[player] = 0;
+                window.photonCleanse[player]++;
+                if (window.photonCleanse[player] >= 2) {
+                    window.photonCleanse[player] = 0;
+                    const enemies = [];
+                    for (let i=0; i<4; i++) for (let j=0; j<4; j++)
+                        if (board[i][j].owner && board[i][j].owner !== player && board[i][j].element !== 'photon')
+                            enemies.push([i,j]);
+                    if (enemies.length) {
+                        const [ex,ey] = enemies[Math.floor(Math.random()*enemies.length)];
+                        board[ex][ey] = { element:null, owner:null, shield:0, charges:0 };
+                    }
+                }
+            }
+        }
+
+        function countEmptyCells() {
+            let cnt = 0;
+            for (let i=0; i<4; i++) for (let j=0; j<4; j++)
+                if (!board[i]?.[j] || board[i][j].element === null) cnt++;
+            return cnt;
+        }
+
+        function bindElements() {
+            document.querySelectorAll('#elementBar .ele-btn').forEach(btn => {
+                btn.onclick = () => {
+                    if (!gameActive || duelActive) return;
+                    selectedElement = btn.dataset.element;
+                    document.querySelectorAll('#elementBar .ele-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                };
+            });
+            document.querySelector("#elementBar .ele-btn[data-element='lightning']").classList.add('active');
+        }
+
+        document.getElementById('leaveGameBtn').addEventListener('click', async () => {
+            if (myGameId && gameRef) {
+                await gameRef.child('gameActive').set(false);
+                await gameRef.child('log').set(`Игрок ${myPlayerNum} покинул игру.`);
+            }
+            location.reload();
+        });
+
+        function showVictoryModal(v) {
+    const overlay = document.getElementById('victoryOverlay');
+    const title = document.getElementById('victoryTitle');
+    const icon = document.getElementById('victoryIcon');
+    const message = document.getElementById('victoryMessage');
+
+    overlay.classList.remove('hidden');
+
+    if (v.winner === 1) {
+        title.innerText = '🏆 ИГРОК 1 ПОБЕДИЛ!';
+        icon.innerText = '👑';
+        message.innerText = v.reason === 'очков'
+            ? `По очкам: ${v.score1} vs ${v.score2}`
+            : `По территории: ${v.cells1} клеток vs ${v.cells2}`;
+    } else if (v.winner === 2) {
+        title.innerText = '🏆 ИГРОК 2 ПОБЕДИЛ!';
+        icon.innerText = '👑';
+        message.innerText = v.reason === 'очков'
+            ? `По очкам: ${v.score2} vs ${v.score1}`
+            : `По территории: ${v.cells2} клеток vs ${v.cells1}`;
+    } else {
+        title.innerText = '🌀 НИЧЬЯ!';
+        icon.innerText = '🤝';
+        message.innerText = `Равное количество клеток: ${v.cells1}`;
+    }
+
+    console.log('🏁 Результат игры:', v);
+}
+       
+
+// Первичная отрисовка
+document.getElementById('victoryCloseBtn').addEventListener('click', async () => {
+    document.getElementById('victoryOverlay').classList.add('hidden');
+    // Запись результата в историю
+    if (myGameId) {
+        const snap = await gameRef.child('victory').once('value');
+        const victory = snap.val();
+        if (victory) {
+            const ref = db.ref('games/' + myGameId + '/results');
+            const resSnap = await ref.once('value');
+            const results = resSnap.val() || [];
+            results.push({
+                winner: victory.winner,
+                reason: victory.reason,
+                scores: scores,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            });
+            await ref.set(results);
+        }
+    }
+    // Перезапуск (только Игрок 1)
+    if (myPlayerNum === 1) {
+        await gameRef.update({
+            board: Array(4).fill().map(() => Array(4).fill().map(() => ({ element: null, owner: null, shield: 0, charges: 0, pending: false }))),
+            currentPlayer: 1,
+            scores: { 1: 0, 2: 0 },
+            gameActive: true,
+            duel: null,
+            lastMove: null,
+            photonStep: { 1: 0, 2: 0 },
+            photonCleanse: { 1: 0, 2: 0 },
+            victory: null,
+            log: 'Новая игра!'
+        });
+    }
+    clearGameLog();
+    renderBoard();
+});
+
+//         document.getElementById('victoryCloseBtn').addEventListener('click', async () => {
+//     document.getElementById('victoryOverlay').classList.add('hidden');
+//     // Запись результата в историю
+//     if (myGameId) {
+//         const snap = await gameRef.child('victory').once('value');
+//         const victory = snap.val();
+//         if (victory) {
+//             const ref = db.ref('games/' + myGameId + '/results');
+//             const resSnap = await ref.once('value');
+//             const results = resSnap.val() || [];
+//             results.push({
+//                 winner: victory.winner,
+//                 reason: victory.reason,
+//                 scores: scores,
+//                 timestamp: firebase.database.ServerValue.TIMESTAMP
+//             });
+//             await ref.set(results);
+//         }
+//     }
+//     // Перезапуск (только Игрок 1)
+//     if (myPlayerNum === 1) {
+//         await gameRef.update({
+//             board: Array(4).fill().map(() => Array(4).fill().map(() => ({ element: null, owner: null, shield: 0, charges: 0, pending: false }))),
+//             currentPlayer: 1,
+//             scores: { 1: 0, 2: 0 },
+//             gameActive: true,
+//             duel: null,
+//             lastMove: null,
+//             photonStep: { 1: 0, 2: 0 },
+//             photonCleanse: { 1: 0, 2: 0 },
+//             victory: null,
+//             log: 'Новая игра!'
+//         });
+//     }
+//     renderBoard();
+// });
+
+        renderBoard();
+
+    </script>
+
+</body>
+
+</html>
